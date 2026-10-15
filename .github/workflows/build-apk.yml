@@ -21,10 +21,169 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Clean and create android
+      - name: Reset project files
         run: |
-          rm -rf android
-          flutter create . --org com.hassanshukair --project-name alshukairi_app --platforms android
+          rm -rf android lib test pubspec.yaml
+
+      - name: Create Flutter project
+        run: flutter create . --org com.hassanshukair --project-name alshukairi_app --platforms android
+
+      - name: Write pubspec.yaml
+        run: |
+          cat > pubspec.yaml << 'EOF'
+          name: alshukairi_app
+          description: AlShukairi
+          publish_to: 'none'
+          version: 1.0.0+1
+
+          environment:
+            sdk: '>=3.0.0 <4.0.0'
+
+          dependencies:
+            flutter:
+              sdk: flutter
+            webview_flutter: ^4.7.0
+            google_mobile_ads: ^5.1.0
+
+          flutter:
+            uses-material-design: true
+          EOF
+
+      - name: Write lib/main.dart
+        run: |
+          cat > lib/main.dart << 'EOF'
+          import 'package:flutter/material.dart';
+          import 'package:google_mobile_ads/google_mobile_ads.dart';
+          import 'package:webview_flutter/webview_flutter.dart';
+
+          void main() {
+            WidgetsFlutterBinding.ensureInitialized();
+            MobileAds.instance.initialize();
+            runApp(const AlShukairiApp());
+          }
+
+          class AlShukairiApp extends StatelessWidget {
+            const AlShukairiApp({super.key});
+            @override
+            Widget build(BuildContext context) {
+              return MaterialApp(
+                debugShowCheckedModeBanner: false,
+                theme: ThemeData(
+                  colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E3A8A)),
+                ),
+                home: const HomePage(),
+              );
+            }
+          }
+
+          class HomePage extends StatefulWidget {
+            const HomePage({super.key});
+            @override
+            State<HomePage> createState() => _HomePageState();
+          }
+
+          class _HomePageState extends State<HomePage> {
+            int currentIndex = 0;
+            BannerAd? bannerAd;
+            bool bannerLoaded = false;
+
+            final List<String> titles = [
+              'الشقيري للمواد التجارية',
+              'المواد الدراسية',
+              'المذكرات PDF',
+            ];
+
+            final List<String> urls = [
+              'https://www.youtube.com/@HassanSHukair',
+              'https://www.youtube.com/@HassanSHukair/videos',
+              'https://hshukairy.blogspot.com',
+            ];
+
+            late final List<WebViewController> controllers;
+
+            @override
+            void initState() {
+              super.initState();
+              controllers = urls.map((u) {
+                return WebViewController()
+                  ..setJavaScriptMode(JavaScriptMode.unrestricted)
+                  ..loadRequest(Uri.parse(u));
+              }).toList();
+              bannerAd = BannerAd(
+                adUnitId: 'ca-app-pub-3940256099942544/6300978111',
+                size: AdSize.banner,
+                request: const AdRequest(),
+                listener: BannerAdListener(
+                  onAdLoaded: (ad) {
+                    setState(() {
+                      bannerLoaded = true;
+                    });
+                  },
+                  onAdFailedToLoad: (ad, error) {
+                    ad.dispose();
+                  },
+                ),
+              );
+              bannerAd!.load();
+            }
+
+            @override
+            void dispose() {
+              bannerAd?.dispose();
+              super.dispose();
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return Directionality(
+                textDirection: TextDirection.rtl,
+                child: Scaffold(
+                  appBar: AppBar(
+                    title: Text(titles[currentIndex]),
+                    backgroundColor: const Color(0xFF1E3A8A),
+                    foregroundColor: Colors.white,
+                  ),
+                  body: WebViewWidget(controller: controllers[currentIndex]),
+                  bottomNavigationBar: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (bannerLoaded && bannerAd != null)
+                        SizedBox(
+                          width: bannerAd!.size.width.toDouble(),
+                          height: bannerAd!.size.height.toDouble(),
+                          child: AdWidget(ad: bannerAd!),
+                        ),
+                      BottomNavigationBar(
+                        currentIndex: currentIndex,
+                        type: BottomNavigationBarType.fixed,
+                        selectedItemColor: const Color(0xFF1E3A8A),
+                        onTap: (index) {
+                          setState(() {
+                            currentIndex = index;
+                          });
+                        },
+                        items: const [
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.home),
+                            label: 'الرئيسية',
+                          ),
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.menu_book),
+                            label: 'المواد',
+                          ),
+                          BottomNavigationBarItem(
+                            icon: Icon(Icons.description),
+                            label: 'المذكرات',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+          EOF
 
       - run: flutter pub get
 
