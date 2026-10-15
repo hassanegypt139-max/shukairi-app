@@ -5,6 +5,9 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -21,46 +24,35 @@ jobs:
           flutter-version: '3.24.0'
           channel: 'stable'
 
-      - name: Reset project files
+      - name: Reset project
         run: |
           rm -rf android lib test pubspec.yaml
-
-      - name: Create Flutter project
-        run: flutter create . --org com.hassanshukair --project-name alshukairi_app --platforms android
+          flutter create . --org com.hassanshukair --project-name alshukairi_app --platforms android
 
       - name: Write pubspec.yaml
         run: |
-          cat > pubspec.yaml << 'EOF'
+          cat > pubspec.yaml << 'PUBEOF'
           name: alshukairi_app
-          description: AlShukairi
+          description: AlShukairi app
           publish_to: 'none'
           version: 1.0.0+1
-
           environment:
             sdk: '>=3.0.0 <4.0.0'
-
           dependencies:
             flutter:
               sdk: flutter
             webview_flutter: ^4.7.0
-            google_mobile_ads: ^5.1.0
-
           flutter:
             uses-material-design: true
-          EOF
+          PUBEOF
 
       - name: Write lib/main.dart
         run: |
-          cat > lib/main.dart << 'EOF'
+          cat > lib/main.dart << 'DARTEOF'
           import 'package:flutter/material.dart';
-          import 'package:google_mobile_ads/google_mobile_ads.dart';
           import 'package:webview_flutter/webview_flutter.dart';
 
-          void main() {
-            WidgetsFlutterBinding.ensureInitialized();
-            MobileAds.instance.initialize();
-            runApp(const AlShukairiApp());
-          }
+          void main() => runApp(const AlShukairiApp());
 
           class AlShukairiApp extends StatelessWidget {
             const AlShukairiApp({super.key});
@@ -70,6 +62,12 @@ jobs:
                 debugShowCheckedModeBanner: false,
                 theme: ThemeData(
                   colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E3A8A)),
+                  scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+                  appBarTheme: const AppBarTheme(
+                    backgroundColor: Color(0xFF1E3A8A),
+                    foregroundColor: Colors.white,
+                    centerTitle: true,
+                  ),
                 ),
                 home: const HomePage(),
               );
@@ -84,8 +82,6 @@ jobs:
 
           class _HomePageState extends State<HomePage> {
             int currentIndex = 0;
-            BannerAd? bannerAd;
-            bool bannerLoaded = false;
 
             final List<String> titles = [
               'الشقيري للمواد التجارية',
@@ -109,28 +105,6 @@ jobs:
                   ..setJavaScriptMode(JavaScriptMode.unrestricted)
                   ..loadRequest(Uri.parse(u));
               }).toList();
-              bannerAd = BannerAd(
-                adUnitId: 'ca-app-pub-3940256099942544/6300978111',
-                size: AdSize.banner,
-                request: const AdRequest(),
-                listener: BannerAdListener(
-                  onAdLoaded: (ad) {
-                    setState(() {
-                      bannerLoaded = true;
-                    });
-                  },
-                  onAdFailedToLoad: (ad, error) {
-                    ad.dispose();
-                  },
-                ),
-              );
-              bannerAd!.load();
-            }
-
-            @override
-            void dispose() {
-              bannerAd?.dispose();
-              super.dispose();
             }
 
             @override
@@ -138,58 +112,44 @@ jobs:
               return Directionality(
                 textDirection: TextDirection.rtl,
                 child: Scaffold(
-                  appBar: AppBar(
-                    title: Text(titles[currentIndex]),
-                    backgroundColor: const Color(0xFF1E3A8A),
-                    foregroundColor: Colors.white,
-                  ),
+                  appBar: AppBar(title: Text(titles[currentIndex])),
                   body: WebViewWidget(controller: controllers[currentIndex]),
-                  bottomNavigationBar: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (bannerLoaded && bannerAd != null)
-                        SizedBox(
-                          width: bannerAd!.size.width.toDouble(),
-                          height: bannerAd!.size.height.toDouble(),
-                          child: AdWidget(ad: bannerAd!),
-                        ),
-                      BottomNavigationBar(
-                        currentIndex: currentIndex,
-                        type: BottomNavigationBarType.fixed,
-                        selectedItemColor: const Color(0xFF1E3A8A),
-                        onTap: (index) {
-                          setState(() {
-                            currentIndex = index;
-                          });
-                        },
-                        items: const [
-                          BottomNavigationBarItem(
-                            icon: Icon(Icons.home),
-                            label: 'الرئيسية',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: Icon(Icons.menu_book),
-                            label: 'المواد',
-                          ),
-                          BottomNavigationBarItem(
-                            icon: Icon(Icons.description),
-                            label: 'المذكرات',
-                          ),
-                        ],
-                      ),
+                  bottomNavigationBar: BottomNavigationBar(
+                    currentIndex: currentIndex,
+                    type: BottomNavigationBarType.fixed,
+                    selectedItemColor: const Color(0xFF1E3A8A),
+                    onTap: (i) => setState(() => currentIndex = i),
+                    items: const [
+                      BottomNavigationBarItem(icon: Icon(Icons.home), label: 'الرئيسية'),
+                      BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'المواد'),
+                      BottomNavigationBarItem(icon: Icon(Icons.description), label: 'المذكرات'),
                     ],
                   ),
                 ),
               );
             }
           }
-          EOF
+          DARTEOF
 
-      - run: flutter pub get
+      - name: Build
+        run: |
+          set -o pipefail
+          flutter pub get 2>&1 | tee build.log
+          flutter build apk --release 2>&1 | tee -a build.log
 
-      - run: flutter build apk --release
-
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        if: success()
         with:
           name: shukairi-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+
+      - name: Save error report
+        if: failure()
+        run: |
+          tail -60 build.log > ERROR.md 2>/dev/null || echo "log not found" > ERROR.md
+          git config user.name "build-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add ERROR.md
+          git commit -m "error report [skip ci]" || true
+          git push
