@@ -29,6 +29,18 @@ jobs:
           rm -rf android lib test pubspec.yaml
           flutter create . --org com.hassanshukair --project-name alshukairi_app --platforms android
 
+      - name: Fix Kotlin version
+        run: |
+          sed -i 's/id "org.jetbrains.kotlin.android" version "[^"]*"/id "org.jetbrains.kotlin.android" version "1.9.24"/' android/settings.gradle
+          if grep -q "ext.kotlin_version" android/build.gradle 2>/dev/null; then
+            sed -i "s/ext.kotlin_version = '[^']*'/ext.kotlin_version = '1.9.24'/" android/build.gradle
+          fi
+          grep -n "kotlin" android/settings.gradle || true
+
+      - name: Arabic app name
+        run: |
+          sed -i 's|android:label="alshukairi_app"|android:label="الشقيري للمواد التجارية"|' android/app/src/main/AndroidManifest.xml
+
       - name: Write pubspec.yaml
         run: |
           cat > pubspec.yaml << 'PUBEOF'
@@ -47,109 +59,3 @@ jobs:
           PUBEOF
 
       - name: Write lib/main.dart
-        run: |
-          cat > lib/main.dart << 'DARTEOF'
-          import 'package:flutter/material.dart';
-          import 'package:webview_flutter/webview_flutter.dart';
-
-          void main() => runApp(const AlShukairiApp());
-
-          class AlShukairiApp extends StatelessWidget {
-            const AlShukairiApp({super.key});
-            @override
-            Widget build(BuildContext context) {
-              return MaterialApp(
-                debugShowCheckedModeBanner: false,
-                theme: ThemeData(
-                  colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1E3A8A)),
-                  scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-                  appBarTheme: const AppBarTheme(
-                    backgroundColor: Color(0xFF1E3A8A),
-                    foregroundColor: Colors.white,
-                    centerTitle: true,
-                  ),
-                ),
-                home: const HomePage(),
-              );
-            }
-          }
-
-          class HomePage extends StatefulWidget {
-            const HomePage({super.key});
-            @override
-            State<HomePage> createState() => _HomePageState();
-          }
-
-          class _HomePageState extends State<HomePage> {
-            int currentIndex = 0;
-
-            final List<String> titles = [
-              'الشقيري للمواد التجارية',
-              'المواد الدراسية',
-              'المذكرات PDF',
-            ];
-
-            final List<String> urls = [
-              'https://www.youtube.com/@HassanSHukair',
-              'https://www.youtube.com/@HassanSHukair/videos',
-              'https://hshukairy.blogspot.com',
-            ];
-
-            late final List<WebViewController> controllers;
-
-            @override
-            void initState() {
-              super.initState();
-              controllers = urls.map((u) {
-                return WebViewController()
-                  ..setJavaScriptMode(JavaScriptMode.unrestricted)
-                  ..loadRequest(Uri.parse(u));
-              }).toList();
-            }
-
-            @override
-            Widget build(BuildContext context) {
-              return Directionality(
-                textDirection: TextDirection.rtl,
-                child: Scaffold(
-                  appBar: AppBar(title: Text(titles[currentIndex])),
-                  body: WebViewWidget(controller: controllers[currentIndex]),
-                  bottomNavigationBar: BottomNavigationBar(
-                    currentIndex: currentIndex,
-                    type: BottomNavigationBarType.fixed,
-                    selectedItemColor: const Color(0xFF1E3A8A),
-                    onTap: (i) => setState(() => currentIndex = i),
-                    items: const [
-                      BottomNavigationBarItem(icon: Icon(Icons.home), label: 'الرئيسية'),
-                      BottomNavigationBarItem(icon: Icon(Icons.menu_book), label: 'المواد'),
-                      BottomNavigationBarItem(icon: Icon(Icons.description), label: 'المذكرات'),
-                    ],
-                  ),
-                ),
-              );
-            }
-          }
-          DARTEOF
-
-      - name: Build
-        run: |
-          set -o pipefail
-          flutter pub get 2>&1 | tee build.log
-          flutter build apk --release 2>&1 | tee -a build.log
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: shukairi-apk
-          path: build/app/outputs/flutter-apk/app-release.apk
-
-      - name: Save error report
-        if: failure()
-        run: |
-          tail -60 build.log > ERROR.md 2>/dev/null || echo "log not found" > ERROR.md
-          git config user.name "build-bot"
-          git config user.email "bot@users.noreply.github.com"
-          git add ERROR.md
-          git commit -m "error report [skip ci]" || true
-          git push
